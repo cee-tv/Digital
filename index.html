@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Video Player</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.3.8/shaka-player.compiled.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      background: #121212;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: sans-serif;
+    }
+    
+    .container {
+      width: 100%;
+      max-width: 1280px;
+      position: relative;
+      margin: 20px;
+    }
+
+    .header {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      padding: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.7), transparent);
+      z-index: 10;
+    }
+
+    .menu {
+      position: absolute;
+      top: 80px;
+      left: 16px;
+      background: rgba(51,51,51,0.95);
+      border-radius: 8px;
+      padding: 8px;
+      backdrop-filter: blur(4px);
+      width: 256px;
+      z-index: 20;
+      display: none;
+    }
+
+    .menu.show {
+      display: block; 
+    }
+
+    .search {
+      width: 100%;
+      padding: 8px 12px;
+      background: #444;
+      border: none;
+      border-radius: 8px;
+      color: white;
+      margin-bottom: 8px;
+    }
+
+    .channel-btn {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      text-align: left;
+      color: white;
+      padding: 12px 16px;
+      border: none;
+      background: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .channel-btn:hover {
+      background: #444;
+    }
+
+    .channel-logo {
+      height: 24px;
+      width: auto;
+      margin-right: 12px;
+    }
+
+    .video-container {
+      position: relative;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
+    }
+
+    video {
+      width: 100%;
+      aspect-ratio: 16/9;
+      background: black;
+      cursor: pointer;
+    }
+
+    .controls {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 16px;
+      background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .video-container:hover .controls {
+      opacity: 1;
+    }
+
+    .control-btn {
+      color: white;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px 8px;
+    }
+
+    .control-btn:hover {
+      color: #1db954;
+    }
+
+    .volume-control {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .volume-slider {
+      width: 96px;
+      height: 4px;
+      background: rgba(255,255,255,0.3);
+      border-radius: 4px;
+      -webkit-appearance: none;
+    }
+
+    .nav-btn {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      color: rgba(255,255,255,0.7);
+      background: none;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .video-container:hover .nav-btn {
+      opacity: 1;
+    }
+
+    .prev-btn {
+      left: 16px;
+    }
+
+    .next-btn {
+      right: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <button onclick="toggleMenu()" class="control-btn">
+        <i class="fas fa-bars"></i>
+      </button>
+      <h2 id="channel-title" style="color: white; font-weight: bold;"></h2>
+      <div style="width: 32px;"></div>
+    </div>
+
+    <div id="channel-menu" class="menu">
+      <input type="text" class="search" placeholder="Search channels..." onkeyup="filterChannels()" />
+      <div id="channel-list"></div>
+    </div>
+
+    <div class="video-container">
+      <video id="video" autoplay playsinline></video>
+      
+      <button class="nav-btn prev-btn" onclick="previousChannel()">
+        <i class="fas fa-chevron-left"></i>
+      </button>
+      
+      <button class="nav-btn next-btn" onclick="nextChannel()">
+        <i class="fas fa-chevron-right"></i>  
+      </button>
+
+      <div class="controls">
+        <div style="display: flex; align-items: center; gap: 24px;">
+          <button onclick="togglePlay()" class="control-btn">
+            <i id="play-icon" class="fas fa-play"></i>
+          </button>
+          <div class="volume-control">
+            <button onclick="toggleMute()" class="control-btn">
+              <i id="volume-icon" class="fas fa-volume-up"></i>
+            </button>
+            <input type="range" class="volume-slider" min="0" max="1" step="0.1" value="1" onchange="updateVolume(this.value)" />
+          </div>
+        </div>
+        <button onclick="toggleFullscreen()" class="control-btn">
+          <i id="fullscreen-icon" class="fas fa-expand"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const channels = [
+      {
+        name: "TV5 HD",
+        logo: "/tv5-logo.png", 
+        manifestUri: "https://qp-pldt-live-grp-02-prod.akamaized.net/out/u/tv5_hd.mpd",
+        keyId: "2615129ef2c846a9bbd43a641c7303ef",
+        key: "07c7f996b1734ea288641a68e1cfdc4d",
+        type: "dash"
+      },
+      {
+        name: "ABS-CBN",
+        logo: "/abs-cbn-logo.png",
+        manifestUri: "https://cdn-uw2-prod.tsv2.amagi.tv/linear/amg01006-abs-cbn-abscbn-gma-x7-dash-abscbnono/7c693236-e0c1-40a3-8bd0-bb25e43f5bfc/index.mpd",
+        keyId: "c95ed4c44b0b4f7fa1c6ebbbbaab21a1", 
+        key: "47635b8e885e19f2ccbdff078c207058",
+        type: "dash"
+      },
+      {
+        name: "MYX",
+        logo: "/myx-logo.png",
+        manifestUri: "https://myxnola-abscbn-ono.amagi.tv/index.m3u8",
+        type: "hls"
+      }
+    ];
+
+    let currentChannelIndex = 0;
+    let player = null;
+    let hlsPlayer = null;
+    const video = document.getElementById('video');
+    
+    async function initPlayer() {
+      const shaka = window.shaka;
+      shaka.polyfill.installAll();
+
+      if (!shaka.Player.isBrowserSupported()) {
+        return;
+      }
+
+      try {
+        player = new shaka.Player(video);
+        player.addEventListener('error', (event) => {
+          console.error('Error code', event.detail.code, 'object', event.detail);
+        });
+
+        await loadChannel(channels[0], 0);
+      } catch (error) {
+        console.error('Error initializing player:', error);
+      }
+    }
+
+    async function loadChannel(channel, index) {
+      try {
+        if (channel.type === 'hls') {
+          if (player) {
+            await player.unload();
+          }
+
+          if (!hlsPlayer) {
+            hlsPlayer = new Hls();
+          }
+
+          hlsPlayer.loadSource(channel.manifestUri);
+          hlsPlayer.attachMedia(video);
+        } else {
+          if (hlsPlayer) {
+            hlsPlayer.destroy();
+            hlsPlayer = null;
+          }
+
+          await player.unload();
+
+          const clearKeys = {};
+          clearKeys[channel.keyId] = channel.key;
+
+          await player.configure({
+            drm: {
+              servers: {
+                'org.w3.clearkey': 'https://clearkey-base.herokuapp.com/v1/clearkey'
+              },
+              clearKeys
+            }
+          });
+
+          await player.load(channel.manifestUri);
+        }
+
+        currentChannelIndex = index;
+        document.getElementById('channel-title').textContent = channel.name;
+        video.play();
+      } catch (error) {
+        console.error('Error loading channel:', error);
+      }
+    }
+
+    function previousChannel() {
+      const prevIndex = currentChannelIndex === 0 ? channels.length - 1 : currentChannelIndex - 1;
+      loadChannel(channels[prevIndex], prevIndex);
+    }
+
+    function nextChannel() {
+      const nextIndex = (currentChannelIndex + 1) % channels.length;
+      loadChannel(channels[nextIndex], nextIndex);
+    }
+
+    function togglePlay() {
+      if (video.paused) {
+        video.play();
+        document.getElementById('play-icon').classList.replace('fa-play', 'fa-pause');
+      } else {
+        video.pause();
+        document.getElementById('play-icon').classList.replace('fa-pause', 'fa-play');
+      }
+    }
+
+    function toggleMute() {
+      video.muted = !video.muted;
+      const icon = document.getElementById('volume-icon');
+      if (video.muted) {
+        icon.classList.replace('fa-volume-up', 'fa-volume-mute');
+      } else {
+        icon.classList.replace('fa-volume-mute', 'fa-volume-up');
+      }
+    }
+
+    function updateVolume(value) {
+      video.volume = value;
+      const icon = document.getElementById('volume-icon');
+      if (value == 0) {
+        icon.classList.replace('fa-volume-up', 'fa-volume-mute');
+      } else if (value < 0.5) {
+        icon.classList.replace('fa-volume-mute', 'fa-volume-down');
+      } else {
+        icon.classList.replace('fa-volume-down', 'fa-volume-up');
+      }
+    }
+
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.querySelector('.container').requestFullscreen();
+        document.getElementById('fullscreen-icon').classList.replace('fa-expand', 'fa-compress');
+      } else {
+        document.exitFullscreen();
+        document.getElementById('fullscreen-icon').classList.replace('fa-compress', 'fa-expand');
+      }
+    }
+
+    function toggleMenu() {
+      const menu = document.getElementById('channel-menu');
+      menu.classList.toggle('show');
+    }
+
+    function filterChannels() {
+      const searchTerm = document.querySelector('.search').value.toLowerCase();
+      const filteredChannels = channels.filter(channel => 
+        channel.name.toLowerCase().includes(searchTerm)
+      );
+      renderChannels(filteredChannels);
+    }
+
+    function renderChannels(channelList) {
+      const channelListEl = document.getElementById('channel-list');
+      channelListEl.innerHTML = '';
+      
+      channelList.forEach((channel, index) => {
+        const button = document.createElement('button');
+        button.className = 'channel-btn';
+        button.onclick = () => loadChannel(channel, index);
+        
+        const img = document.createElement('img');
+        img.src = channel.logo;
+        img.alt = `${channel.name} logo`;
+        img.className = 'channel-logo';
+        
+        button.appendChild(img);
+        button.appendChild(document.createTextNode(channel.name));
+        channelListEl.appendChild(button);
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      initPlayer();
+      renderChannels(channels);
+    });
+  </script>
+</body>
+</html>
+
+
